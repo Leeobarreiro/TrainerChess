@@ -4,11 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Treinador de Xadrez</title>
+  <meta name="description" content="Treinador de xadrez para iniciantes: o Stockfish explica cada lance em português, sem notação.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header>
-    <h1>♞ Treinador <span>de Xadrez</span></h1>
+    <span class="logo"><svg viewBox="0 0 40 40" aria-hidden="true"><use href="vendor/pieces-classic.svg#wn"/></svg></span>
+    <div class="brand"><h1>Treinador <span>de Xadrez</span></h1><span class="tagline">O Stockfish explica cada lance em português</span></div>
     <span id="who" class="muted"></span>
   </header>
 
@@ -32,9 +38,8 @@
         <button data-act="sound" id="btn-sound">🔊 Som</button>
         <label>Peças
           <select id="opt-pieces">
-            <option value="staunty">Moderno</option>
-            <option value="soft">Suave</option>
             <option value="classic">Clássico</option>
+            <option value="staunty">Moderno</option>
           </select>
         </label>
       </div>
@@ -49,6 +54,11 @@
       </nav>
 
       <div id="tab-play" class="tab">
+        <div id="tr-home"></div>
+        <div id="tr-pick" hidden></div>
+        <div id="tr-bar" hidden></div>
+        <div id="tr-free" hidden>
+        <div class="trhead"><button data-act="tr-back">← Treinar aberturas</button></div>
         <div class="card setup">
           <label>Jogar de
             <select id="opt-color">
@@ -79,8 +89,9 @@
           </label>
           <button class="primary" data-act="new">Nova partida</button>
         </div>
+        </div>
         <div id="coach"></div>
-        <details class="card checklist">
+        <details class="card checklist" id="tr-checklist" hidden>
           <summary>Antes de cada jogada, pergunte…</summary>
           <ol>
             <li>O que o adversário está ameaçando?</li>

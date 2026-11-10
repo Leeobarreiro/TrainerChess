@@ -7,12 +7,13 @@ import { bookFor, LINES, getBlackChoice, setBlackChoice } from './book.js';
 import { loadProfile, summarize, gameRows } from './profile.js';
 import { SYNTH } from './sounds.js';
 import { TEMAS } from './themes.js';
+import { loadOpenings, getOpenings, isKnown, nameAt } from './openings.js';
 
 const ext = (url, label, cls = '') => `<a class="btnlink ${cls}" href="${url}" target="_blank" rel="noopener">${label}</a>`;
 
 const $ = (s) => document.querySelector(s);
 const FILES = 'abcdefgh';
-let pieceSet = 'staunty';
+let pieceSet = 'classic';
 const pieceSvg = (color, type, cls = 'piece') =>
   `<svg class="${cls}" viewBox="0 0 40 40"><use href="vendor/pieces-${pieceSet}.svg#${color}${type}"/></svg>`;
 const START = { p: 8, n: 2, b: 2, r: 2, q: 1 };
@@ -145,6 +146,7 @@ function renderStatus() {
   if (S.mode === 'review') { s.textContent = R ? `Revisão: ${R.title}` : ''; return; }
   if (S.mode === 'puzzle') { s.textContent = 'Exercício: ache a melhor jogada.'; return; }
   if (S.mode === 'puzzle-home') { s.textContent = ''; return; }
+  if (S.mode === 'drill') { s.textContent = D.done ? 'Abertura completa!' : S.chess.turn() === S.user ? 'Sua vez.' : 'Adversário jogando…'; return; }
   const c = S.chess;
   if (c.isCheckmate()) s.textContent = c.turn() === S.user ? 'Xeque-mate. Você perdeu.' : 'Xeque-mate! Você venceu! 🎉';
   else if (c.isGameOver()) s.textContent = 'Empate.';
@@ -226,7 +228,8 @@ function moveSound(c, m, mine = true) {
 let drag = null;
 const canMove = () =>
   (S.mode === 'play' && !S.lock && S.chess.turn() === S.user && !S.chess.isGameOver()) ||
-  (S.mode === 'puzzle' && P.current && !P.done && !P.locked);
+  (S.mode === 'puzzle' && P.current && !P.done && !P.locked) ||
+  (S.mode === 'drill' && D.active && !D.done && !S.lock && S.chess.turn() === S.user);
 
 function moveGhost(e) {
   drag.ghost.style.left = e.clientX - drag.size / 2 + 'px';
@@ -250,7 +253,7 @@ $('#board').addEventListener('pointerdown', (e) => {
   if (!el) return;
   const sq = el.dataset.sq;
   const p = S.view.get(sq);
-  if (!p || p.color !== S.view.turn() || (S.mode === 'play' && p.color !== S.user)) return;
+  if (!p || p.color !== S.view.turn() || ((S.mode === 'play' || S.mode === 'drill') && p.color !== S.user)) return;
   e.preventDefault();
   S.sel = sq;
   S.legal = S.view.moves({ square: sq, verbose: true }).map((m) => m.to);
@@ -281,6 +284,7 @@ document.addEventListener('pointerup', (e) => {
   const to = document.elementFromPoint(e.clientX, e.clientY)?.closest('.sq')?.dataset.sq;
   if (to && to !== d.from && S.legal.includes(to)) {
     if (S.mode === 'puzzle') puzzleMove(d.from, to, true);
+    else if (S.mode === 'drill') drillMove(d.from, to, true);
     else userMove(d.from, to, true);
   } else {
     render();
@@ -372,6 +376,7 @@ function tally(k, cause) {
 
 async function onSquare(sq) {
   if (S.mode === 'puzzle') return puzzleSquare(sq);
+  if (S.mode === 'drill') return drillSquare(sq);
   if (S.mode !== 'play' || S.lock || S.chess.turn() !== S.user || S.chess.isGameOver()) return;
   const p = S.chess.get(sq);
   if (S.sel && S.legal.includes(sq)) return userMove(S.sel, sq);
@@ -869,10 +874,10 @@ function themeCards() {
   const cell = (t) => {
     const feitos = Object.keys(done).filter((k) => k.startsWith(t.key + ':')).length;
     const total = (themeTotals || {})[t.key] || 0;
-    return `<button class="theme" data-act="pz-theme" data-theme="${t.key}"><b>${esc(t.nome)}</b><span>${feitos}/${total} resolvidos</span></button>`;
+    return `<button class="theme" data-act="pz-theme" data-theme="${t.key}" title="${feitos} de ${total} resolvidos"><b>${esc(t.nome)}</b><span>${feitos}/${total}</span></button>`;
   };
   return `<div class="card"><h3>Táticas por tema</h3>
-    <p>Exercícios curtos e fáceis (nível de 400 a 1300), do banco aberto do Lichess. Escolha um tema para praticar.</p>
+    <p>Exercícios curtos e fáceis (nível de 400 a 1300), do banco aberto do Lichess. Escolha um tema para praticar. O número mostra quantos você já resolveu.</p>
     <div class="themes">${TEMAS.map(cell).join('')}</div></div>`;
 }
 
@@ -1140,16 +1145,284 @@ function puzzleHome() {
   renderPuzzleHome();
 }
 
+// ---------- treino de aberturas ----------
+// Você escolhe a cor e a abertura; eu faço os lances do adversário e confiro os seus, um de cada vez.
+const D = { active: false, color: 'w', name: '', key: '', moves: [], notes: null, ply: 0, mistakes: 0, done: false, show: store.get('chess_drill_show', true), token: 0 };
+const T = { view: 'home', color: 'w', q: '', open: null, more: 40 };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const norm = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const drillsDone = () => store.get('chess_drills', {});
+
+function setTrainView(v) {
+  T.view = v;
+  $('#tr-home').hidden = v !== 'home';
+  $('#tr-pick').hidden = v !== 'pick';
+  $('#tr-bar').hidden = v !== 'drill';
+  $('#tr-free').hidden = v !== 'free';
+  $('#tr-checklist').hidden = v !== 'free';
+  $('#coach').hidden = v !== 'drill' && v !== 'free';
+  if (v === 'home') renderTrainHome();
+  if (v === 'pick') renderPick();
+}
+
+// Volta o tabuleiro para a posição inicial, parado.
+function idleBoard() {
+  S.gid++; D.token++; D.active = false;
+  S.chess = new Chess(); S.view = S.chess; S.mode = 'play'; S.lock = true; S.pending = null;
+  S.last = null; S.sel = null; S.legal = []; S.marks = {}; S.arrows = [];
+  $('#coach').innerHTML = '';
+  setEval(0);
+  render();
+}
+
+function renderTrainHome() {
+  $('#tr-home').innerHTML = `
+    <div class="card hero">
+      <h3>Treinar aberturas</h3>
+      <p>Com qual cor você quer treinar? Eu mostro os lances certos, um de cada vez, e respondo como o adversário.</p>
+      <div class="colorpick">
+        <button class="colorcard" data-act="tr-color" data-color="w">${pieceSvg('w', 'k', 'big')}<b>Brancas</b><span>Aprenda a abrir o jogo</span></button>
+        <button class="colorcard" data-act="tr-color" data-color="b">${pieceSvg('b', 'k', 'big')}<b>Pretas</b><span>Aprenda a se defender</span></button>
+      </div>
+    </div>
+    <div class="card slim row">
+      <span class="muted">Quer só jogar?</span>
+      <button data-act="tr-free">Partida livre contra o computador</button>
+    </div>`;
+}
+
+async function renderPick() {
+  const w = T.color === 'w';
+  $('#tr-pick').innerHTML = `
+    <div class="trhead"><button data-act="tr-back">← Voltar</button><h3>Treinar de ${w ? 'brancas' : 'pretas'}</h3></div>
+    <p class="muted">${w ? 'Escolha uma abertura. Você joga com as brancas e eu respondo com as pretas.' : 'Escolha uma defesa. Você joga com as pretas e eu faço os lances das brancas.'}</p>
+    <input id="tr-search" type="search" placeholder="Buscar: Siciliana, Italiana, Gambito…" value="${esc(T.q)}" autocomplete="off">
+    <div id="tr-list"><p class="muted">Carregando aberturas…</p></div>`;
+  try { await loadOpenings(); } catch { $('#tr-list').innerHTML = '<div class="card bad">Não consegui carregar as aberturas.</div>'; return; }
+  renderPickList();
+}
+
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const repName = (n) => cap(n.replace(/^(Brancas|Pretas): /, ''));
+const lineKey = (color, fam, l) => `${color}|${fam}|${l}`;
+
+function renderPickList() {
+  const list = $('#tr-list');
+  if (!list) return;
+  const data = getOpenings();
+  const done = drillsDone();
+  const q = norm(T.q.trim());
+  const lineRow = (fi, lj, f, l, withFam) => {
+    const k = lineKey(T.color, f.name, l.n);
+    return `<button class="linerow" data-act="tr-line" data-f="${fi}" data-l="${lj}"><span><b>${withFam ? esc(f.name) + ': ' : ''}${esc(l.n)}</b>${done[k] ? ' <i class="ok">✓</i>' : ''}</span><small>${l.m.split(' ').length} lances</small></button>`;
+  };
+  if (q.length >= 2) {
+    const rows = [];
+    data.forEach((f, fi) => f.lines.forEach((l, lj) => {
+      if (norm(f.name + ' ' + l.n).includes(q)) rows.push(lineRow(fi, lj, f, l, true));
+    }));
+    list.innerHTML = rows.length
+      ? `<p class="muted small">${rows.length} resultado${rows.length > 1 ? 's' : ''}</p>${rows.slice(0, 60).join('')}${rows.length > 60 ? '<p class="muted small">Refine a busca para ver mais.</p>' : ''}`
+      : '<p class="muted">Nada encontrado. Tente outro nome.</p>';
+    return;
+  }
+  const fam = (f, fi) => {
+    const open = T.open === fi;
+    let inner = '';
+    if (open) {
+      const rows = f.lines.slice(0, T.more).map((l, lj) => lineRow(fi, lj, f, l, false)).join('');
+      inner = `<div class="lines">${rows}${f.lines.length > T.more ? `<button class="more" data-act="tr-more">Mostrar mais (${f.lines.length - T.more})</button>` : ''}</div>`;
+    }
+    return `<div class="fam ${open ? 'open' : ''}"><button class="famhead" data-act="tr-fam" data-i="${fi}"><span><b>${esc(f.name)}</b> <small>${f.eco}</small></span><small>${f.lines.length} variante${f.lines.length > 1 ? 's' : ''} ${open ? '▴' : '▾'}</small></button>${inner}</div>`;
+  };
+  const mine = [];
+  const other = [];
+  data.forEach((f, fi) => (f.side === T.color ? mine : other).push(fam(f, fi)));
+  const feat = LINES.map((l, i) => [l, i]).filter(([l]) => l.side === T.color)
+    .map(([l, i]) => `<button class="linerow star" data-act="tr-cur" data-i="${i}"><span><b>⭐ ${esc(repName(l.name))}</b>${done[lineKey(T.color, 'rep', l.name)] ? ' <i class="ok">✓</i>' : ''}</span><small>${l.moves.split(' ').length} lances</small></button>`).join('');
+  const w = T.color === 'w';
+  list.innerHTML = `<h4>⭐ Para começar</h4><p class="muted small">Linhas simples para iniciantes, com uma explicação para cada lance.</p>${feat}
+    <h4>${w ? 'Aberturas das brancas' : 'Defesas das pretas'} <small class="muted">(${mine.length})</small></h4>${mine.join('')}
+    <details class="other"><summary>${w ? 'Defesas do adversário (você joga de brancas contra elas)' : 'Aberturas das brancas (você joga de pretas contra elas)'} <small class="muted">(${other.length})</small></summary>${other.join('')}</details>`;
+}
+
+function startDrill(spec) {
+  S.gid++; D.token++;
+  Object.assign(D, { active: true, color: spec.color, name: spec.name, key: spec.key, moves: spec.moves, notes: spec.notes || null, ply: 0, mistakes: 0, done: false });
+  S.chess = new Chess(); S.view = S.chess; S.mode = 'drill'; S.user = D.color; S.flip = D.color === 'b';
+  S.last = null; S.sel = null; S.legal = []; S.marks = {}; S.arrows = []; S.pending = null; S.lock = true;
+  setTrainView('drill');
+  setEval(0);
+  $('#evaltext').textContent = '';
+  render();
+  renderDrillBar();
+  drillAdvance();
+}
+
+function renderDrillBar() {
+  const pct = D.moves.length ? Math.round((100 * D.ply) / D.moves.length) : 0;
+  const now = nameAt(D.moves.slice(0, D.ply));
+  $('#tr-bar').innerHTML = `<div class="card slim drillbar">
+    <div class="dname">${esc(D.name)}</div>
+    <div class="muted small">${now && now !== D.name ? 'Agora: ' + esc(now) + ' · ' : ''}${D.done ? 'completa' : `lance ${D.ply + 1} de ${D.moves.length}`}</div>
+    <div class="progress"><i style="width:${pct}%"></i></div>
+    <div class="btns">
+      <button data-act="dr-hint">💡 Dica</button>
+      <button data-act="dr-restart">↻ Recomeçar</button>
+      <button data-act="dr-exit">Outra abertura</button>
+    </div>
+    <label class="switch"><input type="checkbox" data-act="dr-show" ${D.show ? 'checked' : ''}> Mostrar o lance certo no tabuleiro</label>
+  </div>`;
+}
+
+function expected() {
+  const san = D.moves[D.ply];
+  const m = new Chess(S.chess.fen()).move(san);
+  return { san, from: m.from, to: m.to, promotion: m.promotion, fen: S.chess.fen() };
+}
+
+function userMoveIndex() { return D.color === 'w' ? Math.ceil(D.ply / 2) : Math.floor(D.ply / 2); }
+
+function whyText(ex) {
+  if (D.notes && D.notes[userMoveIndex()]) return `<p>${esc(D.notes[userMoveIndex()])}</p>`;
+  try {
+    const r = explainMove(ex.fen, { from: ex.from, to: ex.to, promotion: ex.promotion }).reasons.slice(0, 2);
+    return r.length ? `<ul>${li(r)}</ul>` : '';
+  } catch { return ''; }
+}
+
+function showDrillPrompt(forceShow = false) {
+  const ex = expected();
+  renderDrillBar();
+  S.marks = {}; S.arrows = [];
+  if (D.show || forceShow) {
+    S.marks = { [ex.from]: 'from', [ex.to]: 'to' };
+    S.arrows = [{ from: ex.from, to: ex.to, color: 'green' }];
+    coach(`<div class="headline">Sua vez: faça este lance</div><p>${moveWords(ex.fen, ex)}</p>${whyText(ex)}`, 'good');
+  } else {
+    coach('<div class="headline">Sua vez</div><p>Qual é o próximo lance da abertura? Se travar, use a dica.</p>');
+  }
+  render();
+}
+
+async function drillAdvance() {
+  const t = ++D.token;
+  while (D.ply < D.moves.length && S.chess.turn() !== S.user) {
+    S.lock = true;
+    renderStatus();
+    coach('<p class="muted">O adversário está jogando…</p>', '', [], false);
+    await sleep(D.ply === 0 ? 350 : 650);
+    if (t !== D.token) return;
+    const m = S.chess.move(D.moves[D.ply]);
+    D.ply++;
+    S.last = m; S.marks = {}; S.arrows = [];
+    render();
+    animate(m.from, m.to);
+    moveSound(S.chess, m, false);
+    renderDrillBar();
+  }
+  if (t !== D.token) return;
+  if (D.ply >= D.moves.length) return finishDrill();
+  S.lock = false;
+  showDrillPrompt();
+}
+
+function finishDrill() {
+  D.done = true; S.lock = true; S.marks = {}; S.arrows = [];
+  const done = drillsDone();
+  const prev = done[D.key];
+  done[D.key] = { times: (prev?.times || 0) + 1, best: prev ? Math.min(prev.best, D.mistakes) : D.mistakes };
+  store.set('chess_drills', done);
+  renderDrillBar();
+  const nota = D.mistakes === 0 ? 'Sem nenhum erro. Ótimo!' : `Você errou ${D.mistakes} vez${D.mistakes > 1 ? 'es' : ''}. Repita para fixar.`;
+  coach(`<h3>🎉 Abertura completa!</h3><p>${esc(D.name)}. ${nota}</p>`, 'good', [
+    { act: 'dr-restart', label: '↻ Repetir', primary: true },
+    { act: 'dr-exit', label: 'Escolher outra' },
+  ]);
+  render();
+}
+
+function drillSquare(sq) {
+  if (S.lock || D.done || S.chess.turn() !== S.user) return;
+  const p = S.chess.get(sq);
+  if (S.sel && S.legal.includes(sq)) return drillMove(S.sel, sq);
+  if (p && p.color === S.user) {
+    S.sel = sq;
+    S.legal = S.chess.moves({ square: sq, verbose: true }).map((m) => m.to);
+  } else {
+    S.sel = null; S.legal = [];
+  }
+  render();
+}
+
+function drillMove(from, to, dropped = false) {
+  if (!D.active || D.done || S.lock || S.chess.turn() !== S.user) return;
+  const piece = S.chess.get(from);
+  const promotion = piece.type === 'p' && (to[1] === '8' || to[1] === '1') ? 'q' : undefined;
+  const ex = expected();
+  S.sel = null; S.legal = [];
+  if (from === ex.from && to === ex.to && (promotion || undefined) === (ex.promotion || undefined)) {
+    const m = S.chess.move({ from, to, promotion });
+    D.ply++;
+    S.last = m; S.marks = {}; S.arrows = [];
+    render();
+    if (!dropped) animate(from, to);
+    moveSound(S.chess, m, true);
+    renderDrillBar();
+    if (D.ply >= D.moves.length) return finishDrill();
+    return drillAdvance();
+  }
+  D.mistakes++;
+  let m;
+  try { m = new Chess(S.chess.fen()).move({ from, to, promotion }); } catch { return render(); }
+  const seq = [...D.moves.slice(0, D.ply), m.san];
+  const outra = isKnown(seq) ? nameAt(seq) : null;
+  const msg = outra
+    ? `<p>Esse lance existe em outra variante (<b>${esc(outra)}</b>), mas não é a que você está treinando.</p>`
+    : '<p>Esse lance não faz parte da abertura que você está treinando.</p>';
+  S.marks = { [ex.from]: 'from', [ex.to]: 'to' };
+  S.arrows = [{ from: ex.from, to: ex.to, color: 'green' }];
+  coach(`<h3>Quase! Tente o lance da abertura</h3>${msg}<p><b>O lance certo:</b> ${moveWords(ex.fen, ex)}</p>${whyText(ex)}`, 'warn');
+  render();
+}
+
+function openPick(color) {
+  T.color = color; T.q = ''; T.open = null; T.more = 40;
+  idleBoard();
+  S.flip = color === 'b';
+  setTrainView('pick');
+  render();
+}
+
+function pickLine(fi, lj) {
+  const f = getOpenings()[fi];
+  const l = f.lines[lj];
+  startDrill({ color: T.color, name: l.n === 'Linha básica' ? f.name : `${f.name}: ${l.n}`, key: lineKey(T.color, f.name, l.n), moves: l.m.split(' ') });
+}
+
+function pickCurated(i) {
+  const l = LINES[i];
+  startDrill({ color: T.color, name: repName(l.name), key: lineKey(T.color, 'rep', l.name), moves: l.moves.split(' '), notes: l.notes });
+}
+
+function showFreeGame() {
+  idleBoard();
+  setTrainView('free');
+  newGame();
+}
+
 // ---------- abas e eventos ----------
 function selectTab(name, keepMode) {
   document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === name));
   document.querySelectorAll('.tab').forEach((t) => (t.hidden = t.id !== 'tab-' + name));
+  if (name !== 'play' && D.active) D.token++; // pausa o treino enquanto você está em outra aba
   if (keepMode) return;
   if (name === 'play') {
-    S.mode = 'play'; S.view = S.chess; S.flip = S.user === 'b'; S.marks = {}; S.arrows = []; S.sel = null; S.legal = [];
+    S.mode = D.active ? 'drill' : 'play'; S.view = S.chess; S.flip = T.view === 'pick' ? T.color === 'b' : S.user === 'b'; S.marks = {}; S.arrows = []; S.sel = null; S.legal = [];
     const m = S.chess.history({ verbose: true });
     S.last = m.length ? m[m.length - 1] : null;
     render();
+    if (D.active && !D.done) { if (S.chess.turn() === S.user) { S.lock = false; showDrillPrompt(); } else drillAdvance(); }
   } else if (name === 'puzzle') {
     if (!P.list.length) P.list = loadPuzzles();
     if (P.current && S.mode === 'puzzle') return;
@@ -1169,7 +1442,18 @@ document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-act]');
   if (!b) return;
   const a = b.dataset.act;
-  if (a === 'new') { selectTab('play'); newGame(); }
+  if (a === 'new') { selectTab('play'); setTrainView('free'); newGame(); }
+  else if (a === 'tr-color') openPick(b.dataset.color);
+  else if (a === 'tr-back') { idleBoard(); setTrainView(T.view === 'pick' ? 'home' : T.view === 'free' ? 'home' : 'pick'); S.flip = false; render(); }
+  else if (a === 'tr-free') showFreeGame();
+  else if (a === 'tr-fam') { T.open = T.open === +b.dataset.i ? null : +b.dataset.i; T.more = 40; renderPickList(); }
+  else if (a === 'tr-more') { T.more += 60; renderPickList(); }
+  else if (a === 'tr-line') pickLine(+b.dataset.f, +b.dataset.l);
+  else if (a === 'tr-cur') pickCurated(+b.dataset.i);
+  else if (a === 'dr-restart') startDrill({ color: D.color, name: D.name, key: D.key, moves: D.moves, notes: D.notes });
+  else if (a === 'dr-exit') openPick(D.color);
+  else if (a === 'dr-hint') { if (D.active && !D.done && !S.lock && S.chess.turn() === S.user) showDrillPrompt(true); }
+  else if (a === 'dr-show') { D.show = b.checked; store.set('chess_drill_show', D.show); if (D.active && !D.done && !S.lock && S.chess.turn() === S.user) showDrillPrompt(); }
   else if (a === 'flip') { S.flip = !S.flip; render(); }
   else if (a === 'coords') { S.coords = !S.coords; render(); }
   else if (a === 'sound') {
@@ -1200,6 +1484,10 @@ document.addEventListener('click', (e) => {
   else if (a === 'back-list') { S.mode = 'review'; renderGameList(); }
 });
 
+document.addEventListener('input', (e) => {
+  if (e.target.id === 'tr-search') { T.q = e.target.value; renderPickList(); }
+});
+
 document.addEventListener('keydown', (e) => {
   if (S.mode === 'review' && R) {
     if (e.key === 'ArrowRight') reviewGo(R.idx + 1);
@@ -1212,7 +1500,7 @@ $('#opt-avisos').value = S.avisos;
 $('#opt-avisos').addEventListener('change', (e) => { S.avisos = e.target.value; store.set('chess_avisos', S.avisos); });
 $('#opt-black').value = getBlackChoice();
 $('#opt-black').addEventListener('change', (e) => setBlackChoice(e.target.value));
-pieceSet = store.get('chess_pieces', 'staunty');
+pieceSet = ['staunty', 'classic'].includes(store.get('chess_pieces', 'classic')) ? store.get('chess_pieces', 'classic') : 'classic';
 $('#opt-pieces').value = pieceSet;
 $('#opt-pieces').addEventListener('change', (e) => {
   pieceSet = e.target.value;
@@ -1222,6 +1510,6 @@ $('#opt-pieces').addEventListener('change', (e) => {
 $('#btn-sound').textContent = soundOn ? '🔊 Som' : '🔇 Som';
 $('#user').value = store.get('chess_user', '');
 $('#who').textContent = $('#user').value;
-render();
-newGame();
-window.__chess = { S, analyst, opponent, sound, moveSound }; // ajuda a depurar no console
+setTrainView('home');
+idleBoard();
+window.__chess = { S, D, T, analyst, opponent, sound, moveSound }; // ajuda a depurar no console

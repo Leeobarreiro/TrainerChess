@@ -15,12 +15,12 @@ O servidor ([server.js](server.js)) apenas serve a pasta `public/`. Ele para qua
 
 | Aba | Função |
 |---|---|
-| **Treinar** | Joga contra o Stockfish (Fácil/Médio/Difícil). O treinador avisa de erros e ameaças em frases curtas. Botão "Me ajude" mostra a melhor jogada com seta. Opção "Avisos": só erros (padrão), todos os lances ou nenhum. |
+| **Treinar** | Começa perguntando se você quer treinar de **brancas** ou de **pretas**. Depois você escolhe uma abertura (ou defesa) entre as ~150 famílias e ~3.900 variantes do banco do Lichess, ou uma das linhas "Para começar", que têm uma explicação para cada lance. O treino mostra o lance certo com seta e palavras, o app joga como adversário e corrige seus erros. Dá para desligar a seta para praticar de memória. Também há "Partida livre" contra o Stockfish (Fácil/Médio/Difícil) com avisos de erros e ameaças. |
 | **Exercícios** | Problemas criados a partir dos erros das suas partidas e sessões temáticas (garfo, cravada, mate em 2…) com problemas do Lichess. |
 | **Meu perfil** | Carrega suas partidas do chess.com (últimos 6 meses de arquivos) e resume aberturas, resultados e erros, incluindo o histórico acumulado de lances salvo no navegador. |
 | **Revisar** | Revisão lance a lance de uma partida sua, com classificação de cada lance. |
 
-Também: arrastar e soltar peças, animação de movimento, barra de avaliação, sons, três conjuntos de peças e layout de uma tela só (em telas ≥ 900 px, sem rolagem da página).
+Também: arrastar e soltar peças, animação de movimento, barra de avaliação, sons, dois conjuntos de peças e layout de uma tela só (em telas ≥ 900 px, sem rolagem da página).
 
 ## Estrutura
 
@@ -34,14 +34,16 @@ public/
   explain.js             explicações em português (peças soltas, ameaças, garfos, mates)
   book.js                repertório de aberturas por posição (FEN)
   profile.js             leitura e resumo das partidas do chess.com
+  openings.js            carrega openings.json e identifica o nome da abertura
+  openings.json          banco de aberturas (gerado; veja tools/build-openings.mjs)
   themes.js              lista dos 16 temas táticos dos exercícios
   sounds.js              sons sintetizados (Web Audio)
   sounds/                sobrescrita opcional de sons (index.json, LEIA-ME.txt)
   puzzles/*.json         16 temas de problemas, ratings 400–1300, até 120 por tema (alguns têm menos, como clearance com 57)
   vendor/                chess.js, Stockfish WASM, conjuntos de peças, LICENSES.txt
 tools/
+  build-openings.mjs     gera public/openings.json a partir do banco de aberturas do Lichess
   build-puzzles.mjs      gera public/puzzles a partir do banco de problemas do Lichess
-  build-pieces-soft.mjs  gera public/vendor/pieces-soft.svg
 ```
 
 ## Como funciona por dentro
@@ -51,6 +53,7 @@ tools/
 - **Análise:** o treinador analisa em profundidade 12 durante a partida e 10 na revisão.
 - **Classificação de lances:** pela perda de chance de vitória, `winPct(cp) = 50 + 50·(2/(1+e^(−0,00368208·cp)) − 1)`. Perda < 2% melhor; < 5% bom; < 10% imprecisão; < 20% erro; acima disso, gafe. Erros e gafes (perda ≥ 10%) pausam a partida com opções de desfazer, continuar ou ver o detalhe, exceto com avisos em "Nenhum".
 - **Explicações:** regras escritas à mão em [explain.js](public/explain.js) (peças sem defesa, ameaças, garfos, ameaças de mate), baseadas nas linhas do Stockfish.
+- **Treino de aberturas:** os dados vêm de https://github.com/lichess-org/chess-openings (domínio público, CC0). Cada família é classificada como abertura das brancas ou defesa das pretas pelo nome e pela linha mais curta; a lista do lado escolhido aparece primeiro e o resto fica numa seção recolhida. Os nomes das famílias mais conhecidas estão em português; os das variantes ficam no nome original. O app só aceita o lance exato da linha escolhida e avisa quando o seu lance pertence a outra variante conhecida.
 - **Repertório:** [book.js](public/book.js) indexa as linhas pelos 4 primeiros campos do FEN. Brancas: Italiana (3 linhas), Petrov, Escandinava, Alekhine, Francesa, Caro-Kann Avanço. Pretas contra 1.e4: Caro-Kann (padrão) ou 1...e5, escolhido no setup. Também há linhas contra 1.d4, London e 1.Nf3. As linhas foram checadas só quanto a legalidade e solidez segundo o Stockfish, **não** contra a teoria dos cursos.
 - **Exercícios das suas partidas:** o minerador ignora os 8 primeiros meio-lances (abertura) e guarda a posição só se havia uma única resposta clara (a segunda melhor perde ≥ 10% de chance de vitória) e o seu lance perdeu ≥ 20%.
 - **Chess.com:** só a API pública de arquivos de partidas, para perfil, revisão e problemas das suas partidas.
@@ -58,11 +61,11 @@ tools/
 ## Sons e peças
 
 - **Sons:** sintetizados em [sounds.js](public/sounds.js), com parâmetros ajustados a medidas (duração, tom, volume) de um tabuleiro online de referência. Não há arquivos de áudio de terceiros. Cobrem lance, lance do adversário, captura, xeque/mate e roque; promoção e fim de partida usam variações do lance, sem medida de referência. Para usar seus próprios arquivos (que você tenha direito de usar), liste-os em `public/sounds/index.json`; chaves: `move`, `opp`, `capture`, `check`, `castle`, `promote`, `end`. Veja [LEIA-ME.txt](public/sounds/LEIA-ME.txt).
-- **Peças:** *Moderno* (Staunty, CC BY-NC-SA 4.0, uso não comercial), *Suave* (desenho original deste projeto) e *Clássico* (Cburnett). Licenças em [LICENSES.txt](public/vendor/LICENSES.txt). Peças e sons do chess.com não são usados por serem protegidos por direitos autorais.
+- **Peças:** *Clássico* (Cburnett, padrão) e *Moderno* (Staunty, CC BY-NC-SA 4.0, uso não comercial). Licenças em [LICENSES.txt](public/vendor/LICENSES.txt). Peças e sons do chess.com não são usados por serem protegidos por direitos autorais.
 
 ## Dados salvos no navegador (localStorage)
 
-`chess_user`, `chess_rating`, `chess_life` (histórico acumulado de lances), `chess_black_e4` (defesa escolhida contra 1.e4), `chess_puzzles`, `chess_theme_solved`, `chess_sound`, `chess_pieces`, `chess_avisos`. Limpar os dados do site apaga o progresso nos exercícios.
+`chess_user`, `chess_rating`, `chess_life` (histórico acumulado de lances), `chess_black_e4` (defesa escolhida contra 1.e4), `chess_drills` (aberturas já completadas), `chess_drill_show` (mostrar a seta no treino), `chess_puzzles`, `chess_theme_solved`, `chess_sound`, `chess_pieces`, `chess_avisos`. Limpar os dados do site apaga o progresso nos exercícios.
 
 ## Dependências
 
@@ -75,7 +78,7 @@ No console do navegador, `window.__chess` expõe `S` (estado), `analyst`, `oppon
 ## Regenerar os dados
 
 ```bash
-node tools/build-pieces-soft.mjs
+node tools/build-openings.mjs <pasta com a.tsv ... e.tsv do repositório lichess-org/chess-openings>
 node tools/build-puzzles.mjs <lichess_db_puzzle.csv.zst>   # banco baixado do Lichess (CC0)
 ```
 
