@@ -106,7 +106,7 @@ function renderPlayers() {
     const isUser = color === userColor;
     const name = isUser ? uname : vsComputer ? `Computador <small>${LEVEL_NAME[S.level]}</small>` : 'Adversário';
     const rate = isUser && rating ? `<small>(${rating})</small>` : '';
-    const avatar = isUser ? `<div class="avatar me">${esc(uname[0].toUpperCase())}</div>` : `<div class="avatar">${vsComputer ? '🤖' : '👤'}</div>`;
+    const avatar = isUser ? `<div class="avatar me">${pieceSvg(color, 'k', 'av')}</div>` : `<div class="avatar">${vsComputer ? '🤖' : '👤'}</div>`;
     el.innerHTML = `${avatar}<div class="who"><span class="name">${isUser ? esc(uname) : name} ${rate}</span><span class="caps">${mine.icons}${diff > 0 ? `<b>+${diff}</b>` : ''}</span></div>`;
   };
   const bottom = S.flip ? 'b' : 'w';
