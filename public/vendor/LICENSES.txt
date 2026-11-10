@@ -5,3 +5,4 @@ stockfish-*         - Stockfish 19 (build WASM lite do pacote npm "stockfish"), 
                       Código-fonte: https://github.com/official-stockfish/Stockfish (pacote npm: https://github.com/nmrugg/stockfish.js)
                       Texto da licença: https://www.gnu.org/licenses/gpl-3.0.html
 ../openings.json   - Banco de aberturas do Lichess (lichess-org/chess-openings), CC0 / domínio público.
+../coach.png        - Personagem do cabeçalho e ícone da aba: criação própria do autor do projeto (Krita).
