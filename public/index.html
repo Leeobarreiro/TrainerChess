@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Treinador de Xadrez</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>♞ Treinador <span>de Xadrez</span></h1>
+    <span id="who" class="muted"></span>
+  </header>
+
+  <main>
+    <section id="left">
+      <div id="boardrow">
+        <div id="evalbar" title="Quem está melhor na posição"><div id="evalfill"></div></div>
+        <div id="boardcol">
+          <div class="player" id="p-top"></div>
+          <div id="boardwrap">
+            <div id="board"></div>
+            <svg id="arrows" viewBox="0 0 8 8"></svg>
+          </div>
+          <div class="player" id="p-bottom"></div>
+        </div>
+      </div>
+      <div id="statusrow"><div id="status"></div><div id="evaltext">Posição igual</div></div>
+      <div id="toolbar">
+        <button data-act="flip">🔄 Virar</button>
+        <button data-act="coords">🔤 Casas</button>
+        <button data-act="sound" id="btn-sound">🔊 Som</button>
+        <label>Peças
+          <select id="opt-pieces">
+            <option value="staunty">Moderno</option>
+            <option value="soft">Suave</option>
+            <option value="classic">Clássico</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <aside id="right">
+      <nav id="tabs">
+        <button data-tab="play" class="on">Treinar</button>
+        <button data-tab="puzzle">Exercícios</button>
+        <button data-tab="profile">Meu perfil</button>
+        <button data-tab="review">Revisar</button>
+      </nav>
+
+      <div id="tab-play" class="tab">
+        <div class="card setup">
+          <label>Jogar de
+            <select id="opt-color">
+              <option value="w">Brancas</option>
+              <option value="b">Pretas</option>
+              <option value="r">Sorteio</option>
+            </select>
+          </label>
+          <label>Adversário
+            <select id="opt-level">
+              <option value="easy">Fácil</option>
+              <option value="mid">Médio</option>
+              <option value="hard">Difícil</option>
+            </select>
+          </label>
+          <label>Pretas contra 1.e4
+            <select id="opt-black">
+              <option value="caro">Caro-Kann</option>
+              <option value="e5">1...e5</option>
+            </select>
+          </label>
+          <label>Avisos
+            <select id="opt-avisos">
+              <option value="erros">Só erros</option>
+              <option value="todos">Todos os lances</option>
+              <option value="nenhum">Nenhum</option>
+            </select>
+          </label>
+          <button class="primary" data-act="new">Nova partida</button>
+        </div>
+        <div id="coach"></div>
+        <details class="card checklist">
+          <summary>Antes de cada jogada, pergunte…</summary>
+          <ol>
+            <li>O que o adversário está ameaçando?</li>
+            <li>Alguma peça minha ficou sem proteção?</li>
+            <li>Depois do meu lance, ele consegue capturar algo?</li>
+          </ol>
+        </details>
+      </div>
+
+      <div id="tab-puzzle" class="tab" hidden>
+        <div id="puzzle-out"></div>
+      </div>
+
+      <div id="tab-profile" class="tab" hidden>
+        <div class="card setup">
+          <label>Usuário no chess.com
+            <input id="user" value="" placeholder="seu usuário" spellcheck="false">
+          </label>
+          <button class="primary" data-act="load">Carregar partidas</button>
+        </div>
+        <div id="profile-out"></div>
+      </div>
+
+      <div id="tab-review" class="tab" hidden>
+        <div id="review-out"><div class="card muted">Carregue seu perfil primeiro e escolha uma partida para revisar. Também dá para revisar a partida que acabou de jogar.</div></div>
+      </div>
+    </aside>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

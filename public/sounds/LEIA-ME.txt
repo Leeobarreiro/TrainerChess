@@ -1,0 +1,18 @@
+SONS PERSONALIZADOS
+
+Por padrão o treinador sintetiza os sons das peças. Para usar os seus próprios arquivos
+(por exemplo, sons que você tem direito de usar), coloque-os nesta pasta e liste-os em
+index.json, assim:
+
+{
+  "move": "move.mp3",
+  "opp": "opp.mp3",
+  "capture": "capture.mp3",
+  "check": "check.mp3",
+  "castle": "castle.mp3",
+  "promote": "promote.mp3",
+  "end": "end.mp3"
+}
+
+"move" é o seu lance e "opp" o lance do adversário (sem "opp", ele continua sintetizado, não usa o "move").
+Qualquer som que ficar de fora continua sendo sintetizado. Formatos aceitos: mp3, ogg, wav.

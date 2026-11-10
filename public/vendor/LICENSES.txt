@@ -1,0 +1,9 @@
+pieces-staunty.svg  - Staunty pieces (lichess), via cm-chessboard. CC BY-NC-SA 4.0 (uso não comercial).
+pieces-classic.svg  - Peças clássicas de Colin M.L. Burnett (Wikimedia), via cm-chessboard. CC BY-SA 3.0.
+chess.js            - chess.js, BSD-2-Clause.
+stockfish-*         - Stockfish 19 (build WASM lite do pacote npm "stockfish"), GPL-3.0.
+                      Código-fonte: https://github.com/official-stockfish/Stockfish (pacote npm: https://github.com/nmrugg/stockfish.js)
+                      Texto da licença: https://www.gnu.org/licenses/gpl-3.0.html
+
+
+pieces-soft.svg: desenho original deste projeto (gerado por tools/build-pieces-soft.mjs). Sem licença externa.
